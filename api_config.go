@@ -13,6 +13,7 @@ type ApiConfig struct {
 	dbQ         *database.Queries
 	Platform    string
 	JWT_SECRET  string
+	Polka_key   string
 }
 
 func (cfg *ApiConfig) MiddlewareHits(next http.Handler) http.Handler {

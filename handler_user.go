@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -21,39 +19,43 @@ type Refresh struct {
 	Token string `json:"token"`
 }
 
-type Userr struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
-	Refresh   string    `json:"refresh_token"`
+type User_Response struct {
+	ID            uuid.UUID `json:"id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Email         string    `json:"email"`
+	Token         string    `json:"token"`
+	Refresh       string    `json:"refresh_token"`
+	Is_chirpy_red bool      `json:"is_chirpy_red"`
+}
+
+type UserResponse struct {
+	Email string `json:"email"`
 }
 
 func (cfg *ApiConfig) MakeUser() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := Request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Print("error decoding request!")
-			w.WriteHeader(500)
+			Respond_err(w, 500, "error decoding request", err)
 			return
 		}
+
 		pass, err := auth.HashPasswords(req.Password)
 		if err != nil {
-			log.Printf("error hashing password %s", err)
-			w.WriteHeader(500)
+			Respond_err(w, 500, "error hasing given password", err)
 			return
 		}
 
 		usr, err := cfg.dbQ.CreateUser(r.Context(), database.CreateUserParams{Email: req.Email, HashedPassword: pass})
 		if err != nil {
-			log.Printf("error making user in db! %s", err)
-			w.WriteHeader(500)
+			Respond_err(w, 500, "error inputting user into db", err)
 			return
 		}
+
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(201)
-		realer := Userr{ID: usr.ID, CreatedAt: usr.CreatedAt, UpdatedAt: usr.UpdatedAt, Email: usr.Email}
+		realer := User_Response{ID: usr.ID, CreatedAt: usr.CreatedAt, UpdatedAt: usr.UpdatedAt, Email: usr.Email, Is_chirpy_red: usr.IsChirpyRed}
 		data, err := json.Marshal(realer)
 		w.Write(data)
 	})
@@ -62,32 +64,40 @@ func (cfg *ApiConfig) MakeUser() http.Handler {
 
 func (cfg *ApiConfig) UserLogin() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		req := Request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Print("error decoding request!")
-			w.WriteHeader(500)
+			Respond_err(w, 500, "error decoding request", err)
 			return
 		}
+
 		user, err := cfg.dbQ.GetUserViaEmail(r.Context(), req.Email)
 		if err != nil {
-			log.Print("error fetching user from db via email!")
-			w.WriteHeader(500)
+			Respond_err(w, 500, "error fetching user via email", err)
 			return
 		}
+
 		refresh := MakeRefreshToken()
 
 		entry, err := cfg.dbQ.InsertToken(r.Context(), database.InsertTokenParams{Token: refresh, UserID: user.ID, ExpiresAt: time.Now().Add(1440 * time.Hour)})
+		if err != nil {
+			Respond_err(w, 500, "error inserting refresh token", err)
+			return
+		}
 		val, err := auth.CheckPasswordHash(req.Password, user.HashedPassword)
-		if val {
+		if err != nil {
+			Respond_err(w, 500, "error comparing password with db hash", err)
+			return
+		}
 
+		if val {
 			tok, err := auth.MakeJwt(user.ID, cfg.JWT_SECRET, time.Duration(1)*time.Hour)
 			if err != nil {
-				fmt.Println("error making jwt token")
+				Respond_err(w, 500, "error making jwt", err)
+				return
 			}
 			w.Header().Add("Content-Type", "application/json")
 			w.WriteHeader(200)
-			realer := Userr{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, Token: tok, Refresh: entry.Token}
+			realer := User_Response{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, Token: tok, Refresh: entry.Token, Is_chirpy_red: user.IsChirpyRed}
 			data, _ := json.Marshal(realer)
 			w.Write(data)
 		} else {
@@ -102,15 +112,18 @@ func (cfg *ApiConfig) Refreshtoken() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := auth.GetBearerToken(r.Header)
 		if err != nil {
-			fmt.Println("error getting refresh token from header")
+			Respond_err(w, 500, "error parsing token from header", err)
+			return
 		}
 
 		res, err := cfg.dbQ.GetRefTokenUser(r.Context(), token)
 		if err != nil {
 			Respond_err(w, 401, "token doesnt exist or expired or revoked", err)
+			return
 		}
 		if res.RevokedAt.Valid {
 			Respond_err(w, 401, "token doesnt exist or expired or revoked", err)
+			return
 		}
 		jwt, err := auth.MakeJwt(res.UserID, cfg.JWT_SECRET, time.Duration(1)*time.Hour)
 		output := Refresh{Token: jwt}
@@ -125,13 +138,54 @@ func (cfg *ApiConfig) Revoke() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := auth.GetBearerToken(r.Header)
 		if err != nil {
-			fmt.Println("error getting refresh token from header")
+			Respond_err(w, 500, "error parsing token from header", err)
+			return
 		}
 		err = cfg.dbQ.RevokeToken(r.Context(), token)
 		if err != nil {
-			fmt.Println("error revoking")
+			Respond_err(w, 500, "error revoking refresh token", err)
+			return
 		}
 		w.WriteHeader(204)
+	})
+
+}
+
+func (cfg *ApiConfig) UpdateUser() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r := Request{}
+		if err := json.NewDecoder(req.Body).Decode(&r); err != nil {
+			Respond_err(w, 500, "error decoding request", err)
+			return
+		}
+		token, err := auth.GetBearerToken(req.Header)
+		if err != nil {
+			Respond_err(w, 401, "error parsing header", err)
+			return
+		}
+
+		user_id, err := auth.ValidateJWT(token, cfg.JWT_SECRET)
+		if err != nil {
+			Respond_err(w, 401, "improper JWT", err)
+			return
+		}
+
+		hashed, err := auth.HashPasswords(r.Password)
+		if err != nil {
+			Respond_err(w, 500, "error hashing password", err)
+			return
+		}
+		updated, err := cfg.dbQ.UpdateUser(req.Context(), database.UpdateUserParams{Email: r.Email, HashedPassword: hashed, ID: user_id})
+		if err != nil {
+			Respond_err(w, 500, "error updating user into db", err)
+			return
+		}
+
+		output := UserResponse{Email: updated.Email}
+		data, err := json.Marshal(output)
+		w.WriteHeader(200)
+		w.Header().Add("Content-Type", "application/json")
+		w.Write(data)
 	})
 
 }

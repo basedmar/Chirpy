@@ -12,20 +12,35 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func GetBearerToken(headers http.Header) (string, error) {
-	token := headers.Get("Authorization")
+func GetApiKey(headers http.Header) (string, error) {
+	header := headers.Get("Authorization")
+	if header == "" {
+		return "", fmt.Errorf("header doesnt exist for polka key check")
+	}
+	split := strings.Split(header, " ")
+	if len(split) != 2 {
+		return "", fmt.Errorf("inproper auth header")
+	}
 
-	if token == "" {
+	token := split[1]
+	return token, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+	header := headers.Get("Authorization")
+
+	if header == "" {
 		return "", fmt.Errorf("header doesnt exist for jwt")
 	}
-	if len(token) > 7 {
-		split := strings.Split(token, " ")
-		tokenn := split[1]
 
-		return tokenn, nil
-	} else {
-		return "", fmt.Errorf("string not long enough / something wrong with formatting")
+	split := strings.Split(header, " ")
+	if len(split) != 2 {
+		return "", fmt.Errorf("inproper auth header")
 	}
+
+	token := split[1]
+	return token, nil
+
 }
 
 func HashPasswords(password string) (string, error) {
@@ -48,6 +63,7 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 }
 
 func MakeJwt(userid uuid.UUID, tokensecret string, expiresin time.Duration) (string, error) {
+
 	claims := jwt.RegisteredClaims{
 		Issuer:    "chirpy-access",
 		IssuedAt:  jwt.NewNumericDate(time.Now()),

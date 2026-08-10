@@ -40,3 +40,20 @@ WHERE token = $1;
 SELECT *
 FROM refresh_token
 WHERE token = $1;
+
+-- name: GetOneUserId :one
+SELECT *
+FROM users
+WHERE id = $1;
+
+
+-- name: UpdateUser :one
+UPDATE users
+SET email = $1, hashed_password = $2
+WHERE id = $3
+RETURNING *;
+
+-- name: UpgradeUser :exec
+UPDATE users
+SET is_chirpy_red = TRUE
+WHERE id = $1;

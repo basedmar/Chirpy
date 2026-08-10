@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -47,14 +46,13 @@ func filterbadword(input string) string {
 
 func (cfg *ApiConfig) ChirpVal() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-
 		decoder := json.NewDecoder(req.Body)
 		chirps := chirpReq{}
 		if err := decoder.Decode(&chirps); err != nil {
-			log.Print("error decoding request!")
-			w.WriteHeader(500)
+			Respond_err(w, 500, "error decoding request body", err)
 			return
 		}
+
 		if len(chirps.Body) > 140 {
 			Respond_err(w, 500, "Chirp too long!", nil)
 			return
@@ -63,17 +61,17 @@ func (cfg *ApiConfig) ChirpVal() http.Handler {
 		clean_body := filterbadword(chirps.Body)
 
 		token, err := auth.GetBearerToken(req.Header)
-		fmt.Println("=====================================================")
-		fmt.Println(token)
+		if err != nil {
+			Respond_err(w, 500, "error paring header", err)
+		}
 		id, err := auth.ValidateJWT(token, cfg.JWT_SECRET)
 		if err != nil {
-
 			Respond_err(w, 401, "BAD JWT!", err)
 			return
 		}
 		request, err := cfg.dbQ.CreateChirp(req.Context(), database.CreateChirpParams{Body: clean_body, UserID: id})
 		if err != nil {
-			fmt.Println(err)
+			Respond_err(w, 500, "error creating chirp", err)
 		}
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(201)
@@ -87,13 +85,18 @@ func (cfg *ApiConfig) AllChirps() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		chirps, err := cfg.dbQ.GetAllChirps(req.Context())
 		if err != nil {
-			fmt.Println("error getting all chirps")
+			Respond_err(w, 500, "error fetching chirps from db", err)
+			return
 		}
 		var final []chirpSend
 		for _, v := range chirps {
 			final = append(final, chirpSend{ID: v.UserID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
 		}
 		send, err := json.Marshal(final)
+		if err != nil {
+			Respond_err(w, 500, "error marshaling chirps from fetchallchirps", err)
+			return
+		}
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(200)
 		w.Write(send)
@@ -119,6 +122,42 @@ func (cfg *ApiConfig) Getchirp() http.Handler {
 		w.WriteHeader(200)
 		w.Write(send)
 
+	})
+
+}
+
+func (cfg *ApiConfig) Deletechirp() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		id, err := uuid.Parse(req.PathValue("chirpID"))
+		if err != nil {
+			Respond_err(w, 500, "error parsing path for id", err)
+			return
+		}
+		chirp, err := cfg.dbQ.GetChirp(req.Context(), id)
+		if err != nil {
+			Respond_err(w, 404, "coudlnt find chirp", err)
+			return
+		}
+		jwt, err := auth.GetBearerToken(req.Header)
+		if err != nil {
+			Respond_err(w, 401, "error parsing token from header", err)
+			return
+		}
+		val, err := auth.ValidateJWT(jwt, cfg.JWT_SECRET)
+		if err != nil {
+			Respond_err(w, 401, "invalid jwt", err)
+			return
+		}
+		if chirp.UserID != val {
+			Respond_err(w, 403, "jwt user does not own specified chirp for deletion", err)
+			return
+		}
+		err = cfg.dbQ.DeleteChirp(req.Context(), chirp.ID)
+		if err != nil {
+			Respond_err(w, 500, "error deleting chirp", err)
+			return
+		}
+		w.WriteHeader(204)
 	})
 
 }

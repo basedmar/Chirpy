@@ -72,11 +72,8 @@ func main() {
 	srvmux.Handle("POST /admin/reset", api.ResetHits())
 	srvmux.Handle("GET /admin/metrics", api.RetrieveHits())
 
-	srvmux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
-		writer.Header().Add("Content-Type", "text/plain; charset=utf-8")
-		writer.WriteHeader(200)
-		writer.Write([]byte("OK"))
-	})
+	srvmux.HandleFunc("GET /api/healthz", health)
+
 	Server := &http.Server{Handler: srvmux, Addr: ":8080"}
 	Server.ListenAndServe()
 }

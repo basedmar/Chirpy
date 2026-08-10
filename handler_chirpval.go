@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -73,24 +74,53 @@ func (cfg *ApiConfig) ChirpVal() http.Handler {
 		if err != nil {
 			Respond_err(w, 500, "error creating chirp", err)
 		}
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(201)
 		sender := chirpSend{ID: request.ID, CreatedAt: request.CreatedAt, UpdatedAt: request.UpdatedAt, Body: request.Body, UserID: request.UserID}
-		send, err := json.Marshal(sender)
-		w.Write(send)
+		respondWithJSON(w, 201, sender)
 	})
 }
 
 func (cfg *ApiConfig) AllChirps() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		s := req.URL.Query().Get("author_id")
+		b := req.URL.Query().Get("sort")
 		chirps, err := cfg.dbQ.GetAllChirps(req.Context())
 		if err != nil {
 			Respond_err(w, 500, "error fetching chirps from db", err)
 			return
 		}
+		var id uuid.UUID
+		if s != "" {
+			id, err = uuid.Parse(s)
+			if err != nil {
+				Respond_err(w, 401, "invalid id for user", err)
+				return
+			}
+		}
 		var final []chirpSend
-		for _, v := range chirps {
-			final = append(final, chirpSend{ID: v.UserID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
+		if s != "" {
+			for _, v := range chirps {
+				if v.UserID == id {
+					final = append(final, chirpSend{ID: v.UserID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
+				} else {
+					continue
+				}
+			}
+		} else {
+			for _, v := range chirps {
+				final = append(final, chirpSend{ID: v.UserID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
+			}
+		}
+
+		if b == "asc" {
+			sort.Slice(final, func(i, j int) bool {
+				output := final[i].CreatedAt.Compare(final[j].CreatedAt)
+				return output == -1
+			})
+		} else if b == "desc" {
+			sort.Slice(final, func(i, j int) bool {
+				output := final[i].CreatedAt.Compare(final[j].CreatedAt)
+				return output == 1
+			})
 		}
 		send, err := json.Marshal(final)
 		if err != nil {
@@ -115,13 +145,8 @@ func (cfg *ApiConfig) Getchirp() http.Handler {
 			fmt.Println("error getting chirp")
 			Respond_err(w, 404, "coudlnt find chirp", err)
 		}
-
 		chirper := chirpSend{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID}
-		send, err := json.Marshal(chirper)
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(200)
-		w.Write(send)
-
+		respondWithJSON(w, 200, chirper)
 	})
 
 }

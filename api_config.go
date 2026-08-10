@@ -3,18 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"sync/atomic"
-
-	"github.com/basedmar/Chirpy/internal/database"
 )
-
-type ApiConfig struct {
-	filesrvHits atomic.Int64
-	dbQ         *database.Queries
-	Platform    string
-	JWT_SECRET  string
-	Polka_key   string
-}
 
 func (cfg *ApiConfig) MiddlewareHits(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

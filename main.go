@@ -50,6 +50,7 @@ func main() {
 	defer db.Close()
 
 	dbQuery := database.New(db)
+
 	api := ApiConfig{filesrvHits: atomic.Int64{}, dbQ: dbQuery, Platform: platform, JWT_SECRET: jwt_secret, Polka_key: polka_key}
 
 	srvmux := http.NewServeMux()

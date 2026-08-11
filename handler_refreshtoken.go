@@ -1,12 +1,21 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/basedmar/Chirpy/internal/auth"
 )
+
+func MakeRefreshToken() string {
+	dat := make([]byte, 32)
+	rand.Read(dat)
+	value := hex.EncodeToString(dat)
+	return value
+}
 
 func (cfg *ApiConfig) Refreshtoken() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

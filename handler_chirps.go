@@ -63,7 +63,7 @@ func (cfg *ApiConfig) ChirpVal() http.Handler {
 
 		token, err := auth.GetBearerToken(req.Header)
 		if err != nil {
-			Respond_err(w, 500, "error paring header", err)
+			Respond_err(w, 401, "error paring header", err)
 		}
 		id, err := auth.ValidateJWT(token, cfg.JWT_SECRET)
 		if err != nil {
@@ -100,26 +100,24 @@ func (cfg *ApiConfig) AllChirps() http.Handler {
 		if s != "" {
 			for _, v := range chirps {
 				if v.UserID == id {
-					final = append(final, chirpSend{ID: v.UserID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
+					final = append(final, chirpSend{ID: v.ID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
 				} else {
 					continue
 				}
 			}
 		} else {
 			for _, v := range chirps {
-				final = append(final, chirpSend{ID: v.UserID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
+				final = append(final, chirpSend{ID: v.ID, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, Body: v.Body, UserID: v.UserID})
 			}
 		}
 
 		if b == "asc" {
 			sort.Slice(final, func(i, j int) bool {
-				output := final[i].CreatedAt.Compare(final[j].CreatedAt)
-				return output == -1
+				return final[i].CreatedAt.Before(final[j].CreatedAt)
 			})
 		} else if b == "desc" {
 			sort.Slice(final, func(i, j int) bool {
-				output := final[i].CreatedAt.Compare(final[j].CreatedAt)
-				return output == 1
+				return final[i].CreatedAt.After(final[j].CreatedAt)
 			})
 		}
 		send, err := json.Marshal(final)
@@ -138,12 +136,15 @@ func (cfg *ApiConfig) Getchirp() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		id, err := uuid.Parse(req.PathValue("chirpID"))
 		if err != nil {
-			fmt.Println("couldnt parse id")
+			Respond_err(w, 401, "couldnt parse id", err)
+			return
 		}
 		chirp, err := cfg.dbQ.GetChirp(req.Context(), id)
 		if err != nil {
-			fmt.Println("error getting chirp")
+			fmt.Println(id)
+			fmt.Println(chirp)
 			Respond_err(w, 404, "coudlnt find chirp", err)
+			return
 		}
 		chirper := chirpSend{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID}
 		respondWithJSON(w, 200, chirper)

@@ -1,3 +1,17 @@
+MAIN ENDPOINTS:
+POST / PUT "/api/users" Post to make a new user, Put to update user values.
+POST "/api/login" Lets u log in to a made user account
+GET "/api/chirps" && "/api/chirps/{chirpid}" Returns either all chirps, a chirp with a specific id, or u can use query param ?author_id=user_id for only chirps by a specific user. Another query param is also ?sort=asc || desc. This one will order the returned chirps by their upload date. The query params are also only available on the endpoint without a specific chirp id.
+POST "/api/chirps" lets u post a chirp given u provide the proper data. 
+DELETE "/api/chirps/{chirpID}" if u are the owner of the chirp u can delete it.
+
+MISC ENDPOINTS:
+POST "/api/polka/webhooks" A exposed endpoint made for third party services like strip to send a webhook.
+POST "/api/revoke" && "/api/refresh" the revoke endpoint revokes the requesting users current refresh token, refresh refreshes the current jwt using the users refresh token.
+POST "/admin/reset" deletes all user rows
+GET "/admin/metrics" returns an html of how many hits the fileserver has recieved
+any /app/ beginning path is the file server which serves the root dir the webserver is running from directly.
+
 This document is going to be a writeup of every single piece of code in the Chirpy REST api. To preface the rest of this document I would like to introduce this backend api from a higher level. This api essentially mimics the back end of a social media platform like twitter. Users can create accounts, login to them, post chirps aka tweets, delete these tweets and other misc features. The main technologies used in this project apart from go are postgres for the db which stores all the info needed, sqlc for interacting with the backend db via our go code, and JWT tokens used for auth.
 
 Now to begin dissecting this backend api, I will start from the main function line by line and breakdown each endpoint and its handler logic, along the way I will also explain the sql queries used in the handlers and other functionalities. I will also assume the person reading this (if any) are following along with the code themselves.
